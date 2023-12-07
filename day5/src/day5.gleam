@@ -7,7 +7,7 @@ import simplifile
 import gleam/function
 
 type Range {
-  Range(dest: Int, source: Int, len: Int)
+  Range(transform: Int, source: #(Int, Int))
 }
 
 type Map {
@@ -18,39 +18,23 @@ type Almanac {
   Almanac(seeds: List(#(Int, Int)), maps: Dict(String, Map))
 }
 
-fn intersection(a: #(Int, Int), b: #(Int, Int)) -> Result(#(Int, Int), Nil) {
-  let new_lower = int.max(a.0, b.0)
-  let new_upper = int.min(a.1, b.1)
-
-  case new_lower > new_upper {
-    True -> Error(Nil)
-    False -> Ok(#(new_lower, new_upper))
-  }
-}
-
-fn find_range(ranges: List(Range), number: Int) -> List(Range) {
-  case ranges {
-    [] -> []
-    [head, ..rest] if head.source > number -> rest
-    [head, ..rest] if head.source <= number ->
-      case head.source + head.len {
-        end if end > number -> [head, ..rest]
-        _ -> find_range(rest, number)
-      }
-  }
-}
-
 fn convert(ranges: List(Range), range: #(Int, Int)) -> List(#(Int, Int)) {
-  let reduced_ranges =
-    find_range(ranges, range.0)
-    |> list.take_while(fn(r) { r.source < range.0 + range.1 })
-
-  case reduced_ranges {
+  case ranges {
     [] -> [range]
-    [head, ..rest] if head.source < range.0 -> todo
+    [Range(transform: _, source: source), ..] if source.0 > range.1 -> [range]
+    [Range(transform: _, source: source), ..rest] if source.1 <= range.0 ->
+      convert(rest, range)
+    [Range(transform: transform, source: source), ..] if source.0 <= range.0 && source.1 >= range.1 -> {
+      [#(range.0 + transform, range.1 + transform)]
+    }
+    [Range(transform: transform, source: source), ..rest] if source.0 <= range.0 && source.1 < range.1 -> {
+      convert(rest, #(source.1, range.1))
+      |> list.prepend(#(range.0 + transform, source.1 + transform))
+    }
+    [Range(transform: transform, source: source), ..rest] if source.0 > range.0 && source.0 < range.1 -> {
+      [#(range.0, source.0), #(source.0 + transform, range.1 + transform)]
+    }
   }
-
-  todo
 }
 
 fn convert_to(
@@ -76,7 +60,9 @@ pub fn main() {
   let assert Ok(contents) = simplifile.read("input.txt")
 
   let ranges_parser =
-    nibble.succeed(function.curry3(Range))
+    nibble.succeed(function.curry3(fn(dest, source, len) {
+      Range(transform: dest - source, source: #(source, source + len))
+    }))
     |> nibble.keep(nibble.int())
     |> nibble.drop(nibble.whitespace())
     |> nibble.keep(nibble.int())
@@ -84,7 +70,7 @@ pub fn main() {
     |> nibble.keep(nibble.int())
 
   let seeds_pair =
-    nibble.succeed(function.curry2(fn(a, b) { #(a, b) }))
+    nibble.succeed(function.curry2(fn(a, b) { #(a, a + b) }))
     |> nibble.keep(nibble.int())
     |> nibble.drop(nibble.whitespace())
     |> nibble.keep(nibble.int())
@@ -101,7 +87,7 @@ pub fn main() {
     |> nibble.keep(
       nibble.many(ranges_parser, nibble.whitespace())
       |> nibble.map(list.sort(_, fn(a: Range, b: Range) {
-        int.compare(a.source, b.source)
+        int.compare(a.source.0, b.source.0)
       })),
     )
 
@@ -121,8 +107,15 @@ pub fn main() {
 
   let assert Ok(almanac) = nibble.run(contents, parser)
 
-  let assert Ok(part1) =
+  let assert Ok(#(part1, _)) =
     almanac.seeds
+    |> list.fold(
+      [],
+      fn(list, seed) {
+        let #(a, b) = seed
+        [#(a, a + 1), #(b - a, b - a + 1), ..list]
+      },
+    )
     |> list.map(convert_to(almanac.maps, "seed", "location", _))
     |> list.concat()
     |> list.reduce(fn(a, b) {
@@ -134,6 +127,20 @@ pub fn main() {
 
   io.print("Part 1: ")
   io.debug(part1)
+
+  let assert Ok(#(part2, _)) =
+    almanac.seeds
+    |> list.map(convert_to(almanac.maps, "seed", "location", _))
+    |> list.concat()
+    |> list.reduce(fn(a, b) {
+      case a.0 < b.0 {
+        True -> a
+        False -> b
+      }
+    })
+
+  io.print("Part 2: ")
+  io.debug(part2)
 
   Nil
 }

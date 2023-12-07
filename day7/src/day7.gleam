@@ -107,10 +107,6 @@ fn categorize2(hand: Hand) -> HandCategory {
   let grouped: dict.Dict(Card, List(Card)) =
     list.group(hand, by: function.identity)
 
-  let jokers =
-    dict.get(grouped, "J")
-    |> result.unwrap([])
-
   let no_jokers = dict.delete(grouped, "J")
 
   case
